@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forge-eval"
+version = "0.1.0a1"
+description = "Project-level evaluation foundations for coding agents and skills"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+forge-eval = "forge_eval.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

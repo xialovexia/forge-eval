@@ -4,7 +4,47 @@
 
 ForgeEval is a project-level evaluation harness designed for isolated runs, evidence-backed verification, and reproducible comparisons.
 
-> **Status: project initialization.** This repository currently contains the project overview and a Python .gitignore. The architecture, interfaces, and workflows below are planned; a runnable evaluation engine is not yet available.
+> **Status: trusted-local prototype.** The CLI freezes public contract checks and command-agent configuration, runs trusted commands, seals candidates, and produces feature-level JSON and Markdown evaluations. It has no security sandbox, hidden-test protection, real-agent-specific integration, or statistical comparison engine.
+
+## Quick Start
+
+Requires Python 3.9 or newer; local command execution currently requires macOS
+or Linux. No runtime dependencies are required. Run from the repository root:
+
+```sh
+export PYTHONPATH="$PWD/src"
+python3 -m forge_eval prepare \
+  --case examples/hello/case.json \
+  --baseline examples/hello/baseline \
+  --checks examples/hello/checks \
+  --agent-config examples/hello/fixture-agent.json \
+  --run .forge-eval/runs/hello-001
+python3 -m forge_eval generate --run .forge-eval/runs/hello-001 --trusted-local
+python3 -m forge_eval seal --run .forge-eval/runs/hello-001
+python3 -m forge_eval verify --run .forge-eval/runs/hello-001
+python3 -m forge_eval evaluate --run .forge-eval/runs/hello-001 --trusted-local
+```
+
+**This example uses a deterministic fixture that writes a known implementation,
+not a real coding agent.** It demonstrates the orchestration and evaluation
+mechanics only. `--trusted-local` acknowledges that commands and candidate code
+run with your user permissions and inherited environment. Use only trusted code.
+
+Evaluation returns its report path under the run's `evaluations/` directory.
+Each attempt gets a new directory. `verify` checks file integrity only and always
+returns `NOT_EVALUATED`; functional results belong to separate evaluation records.
+
+To evaluate the unfinished baseline, prepare another run with the same checks,
+skip `generate`, then seal and evaluate it: both required features should fail.
+A run without a check bundle produces `UNVERIFIED`, never a functional pass.
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
+For an installed CLI, use `python3 -m pip install -e .` in a virtual environment;
+the equivalent command is then `forge-eval`. See the
+[execution contract](docs/execution.md) and [foundation contract](docs/foundation.md).
 
 ## Purpose
 
@@ -58,9 +98,12 @@ In strict holdout mode, hidden reference information is used for scoring only af
 ## Initial Roadmap
 
 - [ ] Define Case, Run, Artifact, Oracle, and Evaluation schemas.
-- [ ] Implement a minimal CLI and persistent run state.
+- [x] Implement a minimal CLI and file-based persistent run state.
+- [x] Prepare local workspaces and seal and verify candidate files.
 - [ ] Implement isolated workspaces, evidence capture, and artifact sealing.
-- [ ] Add the first agent and project adapters.
+- [x] Add a generic trusted-local command adapter and a Python contract example.
+- [x] Produce feature-level reports with evidence and verification coverage.
+- [ ] Integrate a real agent backend and an isolated project execution environment.
 - [ ] Run a historical change case and a contract case without a Goldline.
 - [ ] Add a second project technology stack without modifying the core engine.
 - [ ] Produce version comparison reports.
@@ -68,4 +111,4 @@ In strict holdout mode, hidden reference information is used for scoring only af
 
 ## Planned Technical Foundation
 
-A Python core, SQLite run index, local artifact storage, and structured result schemas. Project adapters define execution environments. Independent workers and shared storage can later support team deployments.
+The foundation uses a Python core, local artifact storage, and versioned JSON records. A SQLite run index and complete evaluation schemas are planned. Project adapters define execution environments. Independent workers and shared storage can later support team deployments.

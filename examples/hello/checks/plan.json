@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "checks": [
+    {
+      "check_id": "greeting",
+      "features": [
+        "Returns the specified greeting for a non-empty name."
+      ],
+      "argv": [
+        "{python}",
+        "-B",
+        "{checks}/check_greeting.py",
+        "greeting"
+      ],
+      "timeout_seconds": 10
+    },
+    {
+      "check_id": "empty",
+      "features": [
+        "Raises ValueError for an empty or whitespace-only name."
+      ],
+      "argv": [
+        "{python}",
+        "-B",
+        "{checks}/check_greeting.py",
+        "empty"
+      ],
+      "timeout_seconds": 10
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "case_id": "hello-function",
+  "mode": "contract",
+  "requirement": "Implement greet(name) to return 'Hello, <name>!'. Reject empty or whitespace-only names with ValueError.",
+  "required_features": [
+    "Returns the specified greeting for a non-empty name.",
+    "Raises ValueError for an empty or whitespace-only name."
+  ]
+}
