@@ -1,71 +1,71 @@
 # ForgeEval
 
-**面向真实项目的智能体代码生成评测工具。**
+**Evaluate coding agents and skills on real project tasks.**
 
-A project-level evaluation harness for coding agents and skills, with isolated runs, evidence-backed verification, and reproducible comparisons.
+ForgeEval is a project-level evaluation harness designed for isolated runs, evidence-backed verification, and reproducible comparisons.
 
-> 当前状态：项目初始化。仓库目前提供项目说明与 Python 忽略规则；以下架构、接口与评测流程为规划，尚未提供可运行的评测引擎。
+> **Status: project initialization.** This repository currently contains the project overview and a Python .gitignore. The architecture, interfaces, and workflows below are planned; a runnable evaluation engine is not yet available.
 
-## 项目目标
+## Purpose
 
-ForgeEval 用真实需求与项目基线评估 Agent 和 skill 的工程交付能力，关注功能正确性、验证覆盖、稳定性与成本。
+ForgeEval evaluates whether an agent or skill can turn requirements into working project code. It focuses on functional correctness, verification coverage, reliability, and cost.
 
-评测对象是一组完整配置：Agent / 模型、skill 版本、知识版本、工具权限、项目环境与执行预算。比较实验需要固定非目标变量。
+The unit of evaluation is a complete configuration: agent and model, skill version, knowledge snapshot, tool permissions, project environment, and execution budget. Comparisons should keep all variables fixed except the one being evaluated.
 
-## 产品形态
+## Planned Architecture
 
-- **独立评测引擎与 CLI**：负责案例、执行、验证、封存、评分与结果比较。
-- **MCP + Skill 插件入口**：支持通过通用智能体配置评测、查询进度和解释结果。
-- **Agent 适配器**：接入不同 CLI / API 执行端。
-- **项目适配包**：定义环境、构建、测试和业务验收契约。
-- **报告**：保留机器可读结果与可浏览的评测报告。
+- **Standalone engine and CLI:** manage cases, execution, verification, artifact sealing, scoring, and comparisons.
+- **MCP and skill integration:** let general-purpose agents configure evaluations, inspect progress, and explain results.
+- **Agent adapters:** connect different CLI and API execution backends.
+- **Project adapters:** define environment setup, build commands, tests, and acceptance contracts.
+- **Reports:** provide machine-readable results and browsable evidence.
 
-管理评测的智能体与被测智能体使用独立会话和受控工作区。核心执行流程应能脱离聊天界面独立运行。
+The agent managing an evaluation and the agent under test run in separate sessions and controlled workspaces. The core workflow should also run independently of any chat interface.
 
-## 评测模式
+## Evaluation Modes
 
-| 模式 | 生成阶段输入 | 评估目的 |
+| Mode | Generation inputs | What it measures |
 | --- | --- | --- |
-| 严格盲测 | 需求、baseline、允许的知识与工具 | 衡量独立交付能力；生成端无法访问 Goldline 或隐藏评分信息 |
-| 设计引导回放 | 增加经过清洗的参考实现设计反馈 | 衡量设计纠偏后的实现能力；不计入严格盲测成绩 |
-| 契约评测 | 需求、baseline、预先冻结的验收契约 | 支持无历史 Goldline 的新增业务与新项目任务 |
+| Strict holdout | Requirements, baseline, and permitted knowledge and tools | Independent delivery capability, without access to the reference implementation or hidden evaluation information |
+| Guided design replay | The same inputs plus sanitized design feedback derived from a reference implementation | Implementation capability after design correction; results are reported separately from strict holdout |
+| Contract evaluation | Requirements, baseline, and acceptance contracts frozen before the run | Delivery on new features and projects without a historical reference implementation |
 
-Goldline 是参考实现证据；需求与已确认的业务契约决定正确性。允许不同代码结构实现等价行为。
+A **baseline** is the project state before the task. A **Goldline** is a reference implementation used as evidence. Requirements and confirmed business contracts define correctness; alternative implementations may pass when their observable behavior is equivalent.
 
-## 计划中的执行流程
+## Planned Workflow
 
-1. 登记需求来源、案例范围和验收标准。
-2. 冻结 baseline、skill、知识、运行配置与评分标准。
-3. 创建隔离工作区并执行被测 Agent。
-4. 收集候选代码、执行轨迹、用量与退出状态。
-5. 由外部控制器封存候选产物。
-6. 在独立验证环境中运行构建、契约测试、回归检查与必要的语义评审。
-7. 输出逐功能点结果、证据、限制和成本。
-8. 形成待审核知识候选，仅用于后续知识版本。
+1. Register requirement sources, task scope, and acceptance criteria.
+2. Freeze the baseline, skill, knowledge snapshot, execution configuration, and scoring criteria.
+3. Prepare an isolated workspace and run the agent under test.
+4. Capture candidate code, execution traces, usage, and exit status.
+5. Seal candidate artifacts through an external controller.
+6. Run builds, contract tests, regression checks, and any necessary semantic review in an independent evaluation environment.
+7. Report feature-level outcomes, supporting evidence, limitations, and cost.
+8. Produce knowledge improvement candidates for review and use in later versions only.
 
-严格盲测中，隐藏参考信息仅在候选代码封存后用于评分。设计引导回放允许私有审阅者提前读取 Goldline，但只能向生成端提供受控反馈，并明确记录其引导性质。
+In strict holdout mode, hidden reference information is used for scoring only after candidate artifacts are sealed. In guided replay, a private reviewer may inspect the Goldline earlier, but only controlled feedback reaches the generating agent, and the run is explicitly labeled as guided.
 
-## 评测原则
+## Evaluation Principles
 
-- 按可观察业务行为判断功能等价性，不以代码或文件相似度作为主要通过标准。
-- 独立报告构建、静态检查、动态测试与模型裁决的执行情况和证据等级。
-- 分开记录 PASS、FAIL、未验证、环境错误和标准争议；必需功能未验证时不能宣称案例通过。
-- 同时报告功能通过率与判定覆盖率，不通过删除未验证项提高表面成绩。
-- 保存输入版本、评分版本、代码摘要和证据，修复或重评分产生新记录。
-- 固定比较条件并进行重复运行，分别报告质量、稳定性、耗时与用量。
-- 知识学习使用开发案例；泛化结论使用未参与知识提炼的留出案例。
+- Judge observable behavior rather than code similarity or matching file layouts.
+- Report build checks, static analysis, dynamic tests, and model judgments separately, including whether each check actually ran.
+- Distinguish PASS, FAIL, unverified behavior, environment errors, and disputed criteria. A case cannot pass while a required feature remains unverified.
+- Report both functional pass rate and verification coverage. Do not hide unverified items to inflate results.
+- Preserve input versions, evaluator versions, artifact hashes, and evidence. Repairs and rescoring produce new records.
+- Repeat runs under fixed conditions and report quality, reliability, latency, and usage. Separate estimated costs from verified billing.
+- Use development cases for knowledge improvement and untouched holdout cases for claims about generalization.
 
-## 首阶段路线
+## Initial Roadmap
 
-- [ ] 定义 Case、Run、Artifact、Oracle、Evaluation 数据协议。
-- [ ] 实现最小 CLI 与持久化运行状态。
-- [ ] 实现隔离工作区、证据记录与结果封存。
-- [ ] 接入第一个 Agent 与项目适配器。
-- [ ] 跑通历史修改案例及无 Goldline 的契约案例。
-- [ ] 接入第二种项目技术栈，验证新增项目无需修改核心。
-- [ ] 提供版本对照报告。
-- [ ] 封装 MCP 与管理用 Skill。
+- [ ] Define Case, Run, Artifact, Oracle, and Evaluation schemas.
+- [ ] Implement a minimal CLI and persistent run state.
+- [ ] Implement isolated workspaces, evidence capture, and artifact sealing.
+- [ ] Add the first agent and project adapters.
+- [ ] Run a historical change case and a contract case without a Goldline.
+- [ ] Add a second project technology stack without modifying the core engine.
+- [ ] Produce version comparison reports.
+- [ ] Package an MCP interface and a management skill.
 
-## 规划技术基础
+## Planned Technical Foundation
 
-Python 核心、SQLite 运行索引、本地产物目录、结构化结果协议。项目执行环境按适配包配置，后续可扩展为团队使用的独立 worker 与集中式评测服务。
+A Python core, SQLite run index, local artifact storage, and structured result schemas. Project adapters define execution environments. Independent workers and shared storage can later support team deployments.
