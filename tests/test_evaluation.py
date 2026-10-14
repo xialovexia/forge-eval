@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from forge_eval.core import HarnessError, prepare, read_json, run_lock, seal, verify
+from forge_eval.core import HarnessError, prepare, read_json, run_lock, seal, verify, write_json
 from forge_eval.cli import main
 from forge_eval.evaluation import evaluate
 from forge_eval.generation import generate
@@ -146,14 +146,18 @@ class EvaluationTests(unittest.TestCase):
         with self.assertRaises(HarnessError):
             generate(self.run, True)
 
-    def test_unknown_feature_is_rejected_before_preparation(self):
+    def test_unknown_feature_does_not_block_execution(self):
         path = self.example / "checks/plan.json"
         plan = read_json(path)
         plan["checks"][0]["features"] = ["Unknown requirement"]
         path.write_text(json.dumps(plan))
-        with self.assertRaises(HarnessError):
-            self.prepare()
-        self.assertFalse(self.run.exists())
+        self.prepare()
+        generate(self.run, True)
+        seal(self.run)
+        result = evaluate(self.run, True)
+        self.assertEqual(result["status"], "UNVERIFIED")
+        self.assertEqual(result["verification_coverage"], 0.5)
+        self.assertTrue(all(c["status"] == "PASS" for c in result["checks"]))
 
     def test_concurrent_controller_is_rejected(self):
         self.prepare()
@@ -177,13 +181,117 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("trusted-local", json.loads(error.getvalue())["error"])
 
-    def test_malformed_timeout_rejected_without_execution(self):
-        for invalid in (True, 0, -1, float("nan"), float("inf"), "10"):
-            with self.subTest(timeout=invalid):
-                self.set_checks(["{python}", "-c", "pass"], invalid)
-                with self.assertRaises(HarnessError):
-                    self.prepare()
-                self.assertFalse(self.run.exists())
+    def test_timeouts_are_consumed_without_a_format_gate(self):
+        for index, timeout in enumerate(("10", 90000, None)):
+            with self.subTest(timeout=timeout):
+                self.run = self.root / ("timeout-run-%s" % index)
+                self.set_checks(["{python}", "-c", "pass"], timeout)
+                self.prepare()
+                seal(self.run)
+                self.assertEqual(evaluate(self.run, True)["status"], "PASS")
+
+    def test_model_can_use_minimal_inputs_and_empty_arguments(self):
+        feature = read_json(self.example / "case.json")["required_features"][0]
+        write_json(self.example / "case.json", {"required_features": feature, "notes": "minimal input"})
+        agent = read_json(self.example / "fixture-agent.json")
+        write_json(self.example / "fixture-agent.json", agent["argv"])
+        code = "import sys; from pathlib import Path; import greeting; raise SystemExit(0 if greeting.greet('Ada') == 'Hello, Ada!' and sys.argv[1] == '' and Path(sys.argv[2].split('=', 1)[1]).is_file() else 1)"
+        write_json(self.example / "checks/plan.json", [{
+            "check_id": "问候 / 实验",
+            "features": feature + "  ",
+            "argv": ["{python}", "-c", code, "", "--checks={checks}/check_greeting.py"],
+            "notes": "extra fields are allowed",
+        }])
+        self.prepare()
+        self.assertEqual(generate(self.run, True)["status"], "GENERATED")
+        seal(self.run)
+        result = evaluate(self.run, True)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["checks"][0]["check_id"], "问候 / 实验")
+
+    def test_shell_commands_and_a_single_check_are_supported(self):
+        write_json(self.example / "case.json", {"required_features": "Writes a marker"})
+        write_json(self.example / "fixture-agent.json", "printf generated > marker.txt")
+        write_json(self.example / "checks/plan.json", {
+            "command": "test \"$(cat marker.txt)\" = generated",
+            "features": "Writes a marker",
+            "description": "single shell check",
+        })
+        self.prepare()
+        generated = generate(self.run, True)
+        self.assertEqual(generated["status"], "GENERATED")
+        self.assertTrue(generated["execution"]["shell"])
+        seal(self.run)
+        result = evaluate(self.run, True)
+        self.assertEqual(result["status"], "PASS")
+        self.assertTrue(result["checks"][0]["execution"]["shell"])
+
+    def test_duplicate_free_form_check_names_have_independent_evidence(self):
+        path = self.example / "checks/plan.json"
+        plan = read_json(path)
+        for check in plan["checks"]:
+            check["check_id"] = "../相同 / 名称"
+            check["features"] *= 2
+        write_json(path, plan)
+        self.prepare()
+        generate(self.run, True)
+        seal(self.run)
+        result = evaluate(self.run, True)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual([c["check_id"] for c in result["checks"]], ["../相同 / 名称"] * 2)
+        paths = [c["evidence_path"] for c in result["checks"]]
+        self.assertEqual(len(set(paths)), 2)
+        output = Path(result["report_path"]).parent
+        report = Path(result["report_path"]).read_text()
+        for path in paths:
+            self.assertTrue((output / path / "stdout.log").exists())
+            self.assertIn(path + "/stdout.log", report)
+
+    def test_missing_feature_declarations_do_not_break_reporting(self):
+        write_json(self.example / "case.json", {"requirement": "Explore the implementation"})
+        self.prepare()
+        generate(self.run, True)
+        seal(self.run)
+        result = evaluate(self.run, True)
+        self.assertEqual(result["status"], "UNVERIFIED")
+        self.assertEqual(result["features"], [])
+        self.assertEqual(result["verification_coverage"], 0)
+        self.assertEqual(result["feature_pass_rate"], 0)
+        self.assertTrue(all(c["status"] == "PASS" for c in result["checks"]))
+
+    def test_unusable_command_records_an_execution_error(self):
+        write_json(self.example / "fixture-agent.json", {"notes": "No executable command yet"})
+        self.prepare()
+        result = generate(self.run, True)
+        self.assertEqual(result["status"], "GENERATION_FAILED")
+        self.assertIsNotNone(result["execution"]["error"])
+        self.assertTrue((self.run / "generation/result.json").exists())
+        self.assertTrue((self.run / "generation/stderr.log").exists())
+
+    def test_unmapped_check_errors_are_visible_in_the_overall_result(self):
+        path = self.example / "checks/plan.json"
+        plan = read_json(path)
+        plan["checks"].append({"argv": ["{python}", "-c", "raise SystemExit(2)"], "features": "New idea"})
+        write_json(path, plan)
+        self.prepare()
+        generate(self.run, True)
+        seal(self.run)
+        result = evaluate(self.run, True)
+        self.assertEqual(result["status"], "ERROR")
+        self.assertTrue(all(f["status"] == "PASS" for f in result["features"]))
+
+    def test_generation_and_evaluation_ignore_record_format_metadata(self):
+        self.prepare()
+        state = read_json(self.run / "state.json")
+        state.update(schema_version="trial", case_id="operator label", notes="extra metadata")
+        write_json(self.run / "state.json", state)
+        self.assertEqual(generate(self.run, True)["status"], "GENERATED")
+        seal(self.run)
+        record = read_json(self.run / "seal.json")
+        for key in ("schema_version", "kind", "case_id", "evaluation_status"):
+            record.pop(key)
+        write_json(self.run / "seal.json", record)
+        self.assertEqual(evaluate(self.run, True)["status"], "PASS")
 
 
 if __name__ == "__main__":

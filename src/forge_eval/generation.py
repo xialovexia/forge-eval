@@ -4,7 +4,6 @@ from pathlib import Path
 
 from .core import HarnessError, inventory, now, read_json, run_lock, write_json
 from .execution import execute
-from .plans import validate_agent
 
 
 def generate(run_path, trusted_local=False):
@@ -17,11 +16,11 @@ def generate(run_path, trusted_local=False):
 def _generate(run_path):
     run = Path(run_path).resolve()
     state = read_json(run / "state.json")
-    if not isinstance(state, dict) or state.get("status") != "PREPARED":
+    if state.get("status") != "PREPARED":
         raise HarnessError("Generation requires a PREPARED run")
     if inventory(run / "inputs") != state.get("inputs"):
         raise HarnessError("Frozen inputs have changed")
-    config = validate_agent(read_json(run / "inputs/agent.json"))
+    config = read_json(run / "inputs/agent.json")
     if (run / "generation").exists():
         raise HarnessError("Generation evidence already exists; use a new run")
     state["status"] = "RUNNING"

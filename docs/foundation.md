@@ -7,24 +7,33 @@ not enforce an OS sandbox or protect hidden evaluation data. See
 
 ## Case
 
-`schemas/case.schema.json` defines the public JSON format. The dependency-free
-CLI enforces these constraints directly. Only `contract` mode is accepted;
-strict holdout and guided replay remain planned until their boundaries exist.
-Required feature descriptions are public acceptance criteria. Frozen check
-bundles map executable checks to these exact descriptions. A description alone
-is not evidence that the criterion has been met.
+This iteration prioritizes experiments over format enforcement. There are no
+Case, Agent, or Check Plan schemas or validation commands. Case inputs may carry
+arbitrary fields, identifiers, mode labels, and version metadata. A case can be
+a JSON object or a JSON string containing the requirement. Missing `case_id`
+uses the input filename stem as the run label.
+
+`required_features` is optional and can contain a list or a single description.
+Descriptions and check references are compared after trimming surrounding
+whitespace. Unknown references and duplicates do not block execution. Missing
+coverage remains visible in evaluation results; a description alone is not
+evidence that a criterion has been met. Free-form mode labels do not implement
+holdout isolation or guided replay; those capabilities remain planned.
 
 ## Run lifecycle
 
 `prepare` requires a new run directory outside the baseline. It records
-`PREPARING`, copies regular baseline files into `workspace/`, validates the copy,
-then records `PREPARED`. Git metadata named `.git` is excluded; symlinks and
-special files in the copied inputs are rejected. Empty directories are not
+`PREPARING`, enumerates regular baseline files and copies them into `workspace/`,
+then records `PREPARED`. Preparation does not hash baseline files, generate a
+baseline manifest, or compare baseline and workspace digests. Git metadata named
+`.git` is excluded; symlinks and special files in the copied inputs are rejected.
+Empty directories are not
 tracked. Failed preparation retains an `ERROR` record and requires a new run.
 
-`inputs/case.json` contains the normalized public case. The baseline manifest
-records original file hashes, sizes, and modes. Their own digests are retained in
-`state.json` and checked again at sealing time.
+`inputs/case.json` contains the public case. The baseline is the initial workspace
+copy, with file metadata preserved by the copy operation. Frozen case, check,
+and agent files have their digests retained in `state.json` and checked again at
+sealing time.
 
 An operator can modify the workspace using their preferred development tools,
 or invoke a frozen command configuration with `generate`.
@@ -60,15 +69,21 @@ run/
   state.json
   inputs/
     case.json
-    baseline-manifest.json
   workspace/
   artifacts/candidate/
   seal.json
 ```
 
-JSON records carry `schema_version: 1.0`. JSON documents are published using
-atomic replacement. Persistent state is currently file-based; SQLite indexing,
-worker recovery, Oracle/Evaluation schemas, and agent adapters are next steps.
+JSON is the file storage encoding. The controller publishes JSON documents using
+atomic replacement and reads the fields needed by each operation. It does not
+run intermediate-record format checks or compare schema versions, kind labels,
+case identities, or evaluation-status metadata. Generated `schema_version` fields
+are informational. The removed `validate-case` command and strict schema files
+are not part of this experimental workflow.
+
+Run status transitions and file digest comparisons remain operational checks.
+Persistent state is currently file-based; SQLite indexing, worker recovery,
+evaluation data models, and agent adapters are future work.
 
 Generation and evaluation records extend this layout; they do not overwrite the
 seal. `generate`, `seal`, and `evaluate` acquire an exclusive local controller

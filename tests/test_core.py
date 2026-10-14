@@ -3,8 +3,9 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from forge_eval.core import HarnessError, prepare, read_json, seal, validate_case, verify
+from forge_eval.core import HarnessError, prepare, read_json, seal, verify, write_json
 
 
 class LifecycleTests(unittest.TestCase):
@@ -33,6 +34,29 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual((self.baseline / "main.py").read_text(), "print('baseline')\n")
         (self.run / "workspace/main.py").write_text("changed after sealing")
         self.assertEqual(verify(self.run)["integrity"], "VERIFIED")
+
+    def test_preparation_does_not_read_baseline_contents_for_hashing(self):
+        source = self.baseline / "main.py"
+        source.chmod(0o755)
+        nested = self.baseline / "nested"
+        nested.mkdir()
+        (nested / "data.txt").write_text("baseline data")
+        read_bytes = Path.read_bytes
+        workspace = self.run / "workspace"
+
+        def read_without_baseline_hashing(path):
+            if self.baseline in path.parents or workspace in path.parents:
+                raise AssertionError("Preparation must not re-read baseline contents for hashing")
+            return read_bytes(path)
+
+        with patch.object(Path, "read_bytes", read_without_baseline_hashing):
+            state = self.prepare()
+
+        self.assertEqual((workspace / "main.py").read_text(), source.read_text())
+        self.assertEqual((workspace / "main.py").stat().st_mode & 0o777, 0o755)
+        self.assertEqual((workspace / "nested/data.txt").read_text(), "baseline data")
+        self.assertFalse((self.run / "inputs/baseline-manifest.json").exists())
+        self.assertNotIn("baseline-manifest.json", state["inputs"])
 
     def test_candidate_tampering_fails(self):
         self.prepare()
@@ -87,15 +111,40 @@ class LifecycleTests(unittest.TestCase):
         with self.assertRaises(HarnessError):
             verify(self.run)
 
-    def test_case_rejects_unsupported_modes_and_unknown_fields(self):
+    def test_free_form_case_metadata_survives_the_lifecycle(self):
         case = read_json(self.case)
-        case["mode"] = "strict_holdout"
-        with self.assertRaises(HarnessError):
-            validate_case(case)
-        case["mode"] = "contract"
-        case["hidden_gold"] = "/private/reference"
-        with self.assertRaises(HarnessError):
-            validate_case(case)
+        case.update(schema_version="experiment", mode="自由探索", case_id="问候 / 实验", notes="Try an idea")
+        case["required_features"] *= 2
+        write_json(self.case, case)
+        self.prepare()
+        self.assertEqual(read_json(self.run / "inputs/case.json"), case)
+        seal(self.run)
+        self.assertEqual(verify(self.run)["case_id"], case["case_id"])
+
+    def test_case_metadata_is_optional(self):
+        write_json(self.case, {"notes": "No fixed case fields yet"})
+        self.assertEqual(self.prepare()["case_id"], self.case.stem)
+        seal(self.run)
+        self.assertEqual(verify(self.run)["integrity"], "VERIFIED")
+
+    def test_case_can_be_a_requirement_string(self):
+        write_json(self.case, "Explore a greeting implementation")
+        self.prepare()
+        seal(self.run)
+        self.assertEqual(verify(self.run)["integrity"], "VERIFIED")
+
+    def test_intermediate_record_metadata_is_not_checked(self):
+        self.prepare()
+        state = read_json(self.run / "state.json")
+        state.pop("schema_version")
+        state.pop("case_id")
+        state["notes"] = "operator annotation"
+        write_json(self.run / "state.json", state)
+        seal(self.run)
+        record = read_json(self.run / "seal.json")
+        record.update(schema_version="draft", kind="snapshot", case_id="another label", evaluation_status="operator note")
+        write_json(self.run / "seal.json", record)
+        self.assertEqual(verify(self.run)["integrity"], "VERIFIED")
 
 
 if __name__ == "__main__":

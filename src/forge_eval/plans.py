@@ -1,36 +1,31 @@
-"""Frozen public check bundles and command-agent configuration."""
-
-import re
+"""Read experimental check plans without enforcing a format contract."""
 from pathlib import Path
 
-from .core import HarnessError, inventory, read_json
-from .execution import validate_command
+from .core import read_json
 
 
-def validate_plan(root, features):
-    root = Path(root)
-    inventory(root)
-    plan = read_json(root / "plan.json")
-    if not isinstance(plan, dict) or set(plan) != {"schema_version", "checks"} or plan["schema_version"] != "1.0":
-        raise HarnessError("Check plan requires schema_version 1.0 and checks")
-    if not isinstance(plan["checks"], list):
-        raise HarnessError("checks must be an array")
-    seen = set()
-    for check in plan["checks"]:
-        validate_command(check, ("check_id", "features"))
-        identifier = check["check_id"]
-        if not isinstance(identifier, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", identifier):
-            raise HarnessError("Invalid check_id")
-        if identifier in seen:
-            raise HarnessError("Duplicate check_id")
-        seen.add(identifier)
-        mapped = check["features"]
-        if not isinstance(mapped, list) or not mapped or any(not isinstance(f, str) or f not in features for f in mapped):
-            raise HarnessError("Each check must reference known required feature descriptions")
-        if len(set(mapped)) != len(mapped):
-            raise HarnessError("Duplicate feature mapping")
-    return plan
+def as_list(value):
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
 
 
-def validate_agent(value):
-    return validate_command(value)
+def feature_list(value):
+    return [item.strip() if isinstance(item, str) else item for item in as_list(value)]
+
+
+def load_plan(root):
+    value = read_json(Path(root) / "plan.json")
+    if isinstance(value, dict):
+        items = value.get("checks", [value] if "argv" in value or "command" in value else [])
+        plan = dict(value)
+    else:
+        items = value
+        plan = {}
+    checks = []
+    for index, item in enumerate(as_list(items), 1):
+        check = dict(item) if isinstance(item, dict) else {"argv": item}
+        check["check_id"] = str(check.get("check_id", "check-%s" % index))
+        check["features"] = feature_list(check.get("features"))
+        checks.append(check)
+    return {**plan, "checks": checks}

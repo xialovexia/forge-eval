@@ -6,6 +6,13 @@ ForgeEval is a project-level evaluation harness designed for isolated runs, evid
 
 > **Status: trusted-local prototype.** The CLI freezes public contract checks and command-agent configuration, runs trusted commands, seals candidates, and produces feature-level JSON and Markdown evaluations. It has no security sandbox, hidden-test protection, real-agent-specific integration, or statistical comparison engine.
 
+This iteration prioritizes testing ideas and model-directed tool use. Case,
+agent, and check inputs have no enforced schemas, field whitelists, identifier
+patterns, or feature-reference validation. Intermediate records are read without
+schema, version, or identity checks. JSON remains the storage encoding; execution
+results, file integrity, and run lifecycle rules still drive the workflow. See
+the [experimental input conventions](docs/execution.md) for supported commands.
+
 ## Quick Start
 
 Requires Python 3.9 or newer; local command execution currently requires macOS
