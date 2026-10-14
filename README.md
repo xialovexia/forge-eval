@@ -1,129 +1,231 @@
 # ForgeEval
 
-**Evaluate coding agents and skills on real project tasks.**
+**Run coding agents on project tasks and evaluate the code they produce.**
 
-ForgeEval is a project-level evaluation harness designed for isolated runs, evidence-backed verification, and reproducible comparisons.
+ForgeEval is a Python CLI that prepares a project workspace, runs an agent,
+seals its output, and checks that output against your acceptance tests. Each
+run keeps its inputs, execution logs, and feature-level results so you can
+inspect what happened rather than rely on the agent's final message.
 
-> **Status: trusted-local prototype.** The CLI freezes public contract checks and agent configuration, runs generic commands, Claude Code, OpenCode, or DeepSeek Harness, seals candidates, and produces feature-level JSON and Markdown evaluations. It has no security sandbox, hidden-test protection, or statistical comparison engine.
+> **Early prototype for trusted local use.** Agents and checks run on your
+> machine. ForgeEval does not provide a security sandbox, protect hidden tests,
+> or freeze the host's settings and skills. Use trusted projects and commands.
 
-This iteration prioritizes testing ideas and model-directed tool use. Case,
-agent, and check inputs have no enforced schemas, field whitelists, identifier
-patterns, or feature-reference validation. Intermediate records are read without
-schema, version, or identity checks. JSON remains the storage encoding; execution
-results, file integrity, and run lifecycle rules still drive the workflow. See
-the [experimental input conventions](docs/execution.md) for supported commands.
+## What works today
 
-## Quick Start
+- Run Claude Code, OpenCode, DeepSeek Harness, or a custom command.
+- Copy a baseline into a new workspace and freeze public task/check inputs.
+- Capture generation logs, timeouts, exit status, and available usage data.
+- Seal candidate files and detect subsequent changes relative to the seal.
+- Run acceptance checks against fresh copies of the sealed candidate.
+- Produce JSON and Markdown reports with per-feature evidence.
 
-Requires Python 3.9 or newer; local command execution currently requires macOS
-or Linux. No runtime dependencies are required. Run from the repository root:
+A baseline is the project before the requested change. A case describes the
+change and its required behavior. A check bundle contains commands that test
+that behavior. You supply the criteria; ForgeEval runs and records them.
+
+## Requirements and installation
+
+- Python 3.9 or later.
+- macOS or Linux for command execution.
+- An installed, authenticated agent CLI for real-agent runs.
+
+The Python core has no runtime package dependencies. Install from this repository:
+
+```sh
+git clone https://github.com/xialovexia/forge-eval.git
+cd forge-eval
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+forge-eval --help
+```
+
+Alternatively, run directly from the checkout without installing:
 
 ```sh
 export PYTHONPATH="$PWD/src"
-python3 -m forge_eval prepare \
+python3 -m forge_eval --help
+```
+
+Replace `forge-eval` in the examples below with `python3 -m forge_eval` when
+using the source-only approach. Run all examples from the repository root.
+
+## Try the offline example
+
+This example uses a deterministic fixture that writes a known implementation.
+It makes no model requests and demonstrates the evaluation workflow, not an
+agent's coding ability.
+
+```sh
+forge-eval prepare \
   --case examples/hello/case.json \
   --baseline examples/hello/baseline \
   --checks examples/hello/checks \
   --agent-config examples/hello/fixture-agent.json \
   --run .forge-eval/runs/hello-001
-python3 -m forge_eval generate --run .forge-eval/runs/hello-001 --trusted-local
-python3 -m forge_eval seal --run .forge-eval/runs/hello-001
-python3 -m forge_eval verify --run .forge-eval/runs/hello-001
-python3 -m forge_eval evaluate --run .forge-eval/runs/hello-001 --trusted-local
+
+forge-eval generate --run .forge-eval/runs/hello-001 --trusted-local
+forge-eval seal --run .forge-eval/runs/hello-001
+forge-eval verify --run .forge-eval/runs/hello-001
+forge-eval evaluate --run .forge-eval/runs/hello-001 --trusted-local
 ```
 
-**This example uses a deterministic fixture that writes a known implementation,
-not a real coding agent.** It demonstrates the orchestration and evaluation
-mechanics only. `--trusted-local` acknowledges that commands and candidate code
-run with your user permissions and inherited environment. Use only trusted code.
+Expected result: `generate` reports `GENERATED`, `verify` reports `VERIFIED`,
+and `evaluate` reports `PASS` with both required features covered. Evaluation
+prints a `report_path` pointing to the Markdown report; `result.json` and the
+check logs sit alongside it.
 
-Evaluation returns its report path under the run's `evaluations/` directory.
-Each attempt gets a new directory. `verify` checks file integrity only and always
-returns `NOT_EVALUATED`; functional results belong to separate evaluation records.
+`--trusted-local` allows commands to run with host access and inherited
+configuration. Always choose a new run directory for a new attempt. Existing
+runs and seals are not overwritten.
 
-To evaluate the unfinished baseline, prepare another run with the same checks,
-skip `generate`, then seal and evaluate it: both required features should fail.
-A run without a check bundle produces `UNVERIFIED`, never a functional pass.
+To see a functional failure, prepare another run and skip `generate` before
+sealing and evaluating it. The unfinished baseline fails both checks. To try
+manual development, edit the prepared `workspace/` yourself before sealing.
+
+## Choose an agent
+
+Replace `--agent-config` in the preparation command and choose a new run path:
+
+| Backend | Example configuration | Current validation |
+| --- | --- | --- |
+| Claude Code | [`claude-agent.json`](examples/hello/claude-agent.json) | Live hello generation and independent checks passed |
+| OpenCode | [`opencode-agent.json`](examples/hello/opencode-agent.json) | Live hello generation and independent checks passed |
+| DeepSeek Harness | [`deepseek-agent.json`](examples/hello/deepseek-agent.json) | Offline adapter tests passed; live integration not yet verified |
+| Custom command | [`fixture-agent.json`](examples/hello/fixture-agent.json) | Offline example; replace its command with your own |
+
+Real-agent runs consume your configured account's usage. Claude's example sets
+a 300-second timeout and a USD 1 client-estimated budget cap. OpenCode and
+DeepSeek examples set a 300-second timeout but no monetary cap.
+
+Optional model selection is supported by the Claude Code and OpenCode adapters.
+DeepSeek uses the model configured in its own headless profile. A local source
+checkout alone is not enough: its launcher and dependencies must be ready.
+See [all backend options](docs/agent-backends.md) and
+[Claude Code setup](docs/claude-code.md).
+
+## Evaluate your own project
+
+Create three inputs before starting a run:
+
+1. **Baseline directory:** the project files the agent should begin with.
+2. **Case JSON:** a task description and the behavior you want verified.
+3. **Check directory:** a `plan.json` file and any helper scripts it invokes.
+
+For example, a case might contain:
+
+```json
+{
+  "case_id": "greeting",
+  "requirement": "Implement greet(name) and reject blank names.",
+  "required_features": [
+    "Returns a greeting for a valid name.",
+    "Rejects blank names."
+  ]
+}
+```
+
+A check in `plan.json` associates an executable test with a feature:
+
+```json
+{
+  "checks": [
+    {
+      "check_id": "greeting",
+      "features": ["Returns a greeting for a valid name."],
+      "argv": ["{python}", "{checks}/check_greeting.py"],
+      "timeout_seconds": 30
+    }
+  ]
+}
+```
+
+Write `check_greeting.py` to inspect or execute the candidate in the current
+working directory. A check returns **0** when its assertions pass, **1** for a
+functional mismatch, and another exit code for an execution or environment
+error. Normalize your test runner's exit codes to these conventions.
+
+The example plan above leaves the blank-name requirement uncovered, so it
+cannot produce an overall pass. Add a corresponding check before preparing
+the run. The [complete hello bundle](examples/hello/checks) demonstrates both.
+
+Inputs are intentionally permissive: extra fields and incomplete experiments
+are allowed without schema validation. Feature descriptions are matched after
+trimming surrounding whitespace. Unmatched required features remain unverified.
+See the [execution conventions](docs/execution.md) for custom shell commands,
+placeholders, and aggregation rules.
+
+## Understand the results
+
+| Result | Meaning |
+| --- | --- |
+| `PASS` | Required checks passed for the declared features |
+| `FAIL` | At least one check found a functional mismatch |
+| `UNVERIFIED` | Required behavior lacks sufficient checks or declarations |
+| `ERROR` | Execution, environment, or integrity problems prevented a valid result |
+
+Verification coverage is the fraction of required features with a definitive
+`PASS` or `FAIL`. Feature pass rate is the fraction that passed, using every
+required feature as the denominator. Errors and missing checks do not count
+as passes. Failures and errors from unmapped checks also affect the overall
+result; see the detailed report for each check.
+
+**File integrity is separate from functional correctness.** `verify` compares
+files with their seal and returns `NOT_EVALUATED` for functional status even
+when separate evaluations exist. A trusted seal is required: local hashes do
+not protect against someone replacing both the files and the seal.
+
+CLI exit codes are `0` for success, `1` for controller/input errors, `2` for
+command-line usage errors, and `3` for failed generation or a completed non-PASS
+evaluation. Read the JSON status to distinguish failure from missing evidence.
+
+## Where evidence is stored
+
+```text
+.forge-eval/runs/hello-001/
+  inputs/                 # Frozen task, optional check bundle and agent config
+  workspace/              # Agent's editable project copy
+  generation/             # Logs, execution result, adapter prompt when available
+  artifacts/candidate/    # Sealed candidate copy
+  seal.json               # File inventory and digests
+  state.json              # Run lifecycle
+  evaluations/<id>/       # Result JSON, Markdown report, and per-check logs
+```
+
+Every evaluation creates a new ID. Failed attempts remain available for
+inspection. `.forge-eval/` is ignored by Git. Stop all writers before sealing;
+each check then receives a fresh candidate copy. Logs persist, but temporary
+build output is not retained.
+
+Token usage is recorded only when the backend provides it. Client-estimated
+cost is kept separate from verified billing; missing data stays unknown.
+
+## Development
 
 ```sh
-python3 -m unittest discover -s tests -v
+PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-For an installed CLI, use `python3 -m pip install -e .` in a virtual environment;
-the equivalent command is then `forge-eval`. See the
-[execution contract](docs/execution.md) and [foundation contract](docs/foundation.md).
+Automated tests run offline and use fake agent executables. They cover the run
+lifecycle, input/candidate changes, feature aggregation, process errors,
+timeouts, and backend event parsing. CI runs the suite on Python 3.9 and 3.12;
+real provider calls are not part of CI.
 
-## Purpose
+## Scope and next steps
 
-For a real-agent run, see [the backend guide](docs/agent-backends.md) or
-[the Claude Code adapter](docs/claude-code.md). The Claude adapter uses
-the installed Claude CLI and retains event logs, observed model, token usage,
-and client-estimated cost. The default quick start above remains an offline
-fixture and does not call a model.
+The current workflow supports public contract checks on trusted local projects.
+It does not implement hidden-reference evaluation, automatic test generation,
+controlled Skill snapshots, statistical version comparisons, or MCP/plugin
+packaging. A passing example does not establish broad coding capability.
 
-ForgeEval evaluates whether an agent or skill can turn requirements into working project code. It focuses on functional correctness, verification coverage, reliability, and cost.
+For Skill experiments today, configure the host agent yourself and keep the
+model, tools, case, environment, and budget consistent. Host settings are not
+captured automatically, so results cannot yet establish isolated Skill effects.
 
-The unit of evaluation is a complete configuration: agent and model, skill version, knowledge snapshot, tool permissions, project environment, and execution budget. Comparisons should keep all variables fixed except the one being evaluated.
+Planned work includes execution isolation, representative project cases,
+controlled configuration comparisons, and a thin MCP/Skill interface over the
+same engine.
 
-## Planned Architecture
-
-- **Standalone engine and CLI:** manage cases, execution, verification, artifact sealing, scoring, and comparisons.
-- **MCP and skill integration:** let general-purpose agents configure evaluations, inspect progress, and explain results.
-- **Agent adapters:** connect different CLI and API execution backends.
-- **Project adapters:** define environment setup, build commands, tests, and acceptance contracts.
-- **Reports:** provide machine-readable results and browsable evidence.
-
-The agent managing an evaluation and the agent under test run in separate sessions and controlled workspaces. The core workflow should also run independently of any chat interface.
-
-## Evaluation Modes
-
-| Mode | Generation inputs | What it measures |
-| --- | --- | --- |
-| Strict holdout | Requirements, baseline, and permitted knowledge and tools | Independent delivery capability, without access to the reference implementation or hidden evaluation information |
-| Guided design replay | The same inputs plus sanitized design feedback derived from a reference implementation | Implementation capability after design correction; results are reported separately from strict holdout |
-| Contract evaluation | Requirements, baseline, and acceptance contracts frozen before the run | Delivery on new features and projects without a historical reference implementation |
-
-A **baseline** is the project state before the task. A **Goldline** is a reference implementation used as evidence. Requirements and confirmed business contracts define correctness; alternative implementations may pass when their observable behavior is equivalent.
-
-## Planned Workflow
-
-1. Register requirement sources, task scope, and acceptance criteria.
-2. Freeze the baseline, skill, knowledge snapshot, execution configuration, and scoring criteria.
-3. Prepare an isolated workspace and run the agent under test.
-4. Capture candidate code, execution traces, usage, and exit status.
-5. Seal candidate artifacts through an external controller.
-6. Run builds, contract tests, regression checks, and any necessary semantic review in an independent evaluation environment.
-7. Report feature-level outcomes, supporting evidence, limitations, and cost.
-8. Produce knowledge improvement candidates for review and use in later versions only.
-
-In strict holdout mode, hidden reference information is used for scoring only after candidate artifacts are sealed. In guided replay, a private reviewer may inspect the Goldline earlier, but only controlled feedback reaches the generating agent, and the run is explicitly labeled as guided.
-
-## Evaluation Principles
-
-- Judge observable behavior rather than code similarity or matching file layouts.
-- Report build checks, static analysis, dynamic tests, and model judgments separately, including whether each check actually ran.
-- Distinguish PASS, FAIL, unverified behavior, environment errors, and disputed criteria. A case cannot pass while a required feature remains unverified.
-- Report both functional pass rate and verification coverage. Do not hide unverified items to inflate results.
-- Preserve input versions, evaluator versions, artifact hashes, and evidence. Repairs and rescoring produce new records.
-- Repeat runs under fixed conditions and report quality, reliability, latency, and usage. Separate estimated costs from verified billing.
-- Use development cases for knowledge improvement and untouched holdout cases for claims about generalization.
-
-## Initial Roadmap
-
-- [ ] Define Case, Run, Artifact, Oracle, and Evaluation schemas.
-- [x] Implement a minimal CLI and file-based persistent run state.
-- [x] Prepare local workspaces and seal and verify candidate files.
-- [ ] Implement isolated workspaces, evidence capture, and artifact sealing.
-- [x] Add a generic trusted-local command adapter and a Python contract example.
-- [x] Produce feature-level reports with evidence and verification coverage.
-- [x] Integrate a Claude Code CLI backend with execution and usage evidence.
-- [x] Add OpenCode JSON events and DeepSeek Harness headless adapters.
-- [ ] Implement an isolated project execution environment.
-- [ ] Run a historical change case and a contract case without a Goldline.
-- [ ] Add a second project technology stack without modifying the core engine.
-- [ ] Produce version comparison reports.
-- [ ] Package an MCP interface and a management skill.
-
-## Planned Technical Foundation
-
-The foundation uses a Python core, local artifact storage, and versioned JSON records. A SQLite run index and complete evaluation schemas are planned. Project adapters define execution environments. Independent workers and shared storage can later support team deployments.
+Further reading: [foundation and trust boundaries](docs/foundation.md),
+[execution conventions](docs/execution.md), and [backend integration](docs/agent-backends.md).
