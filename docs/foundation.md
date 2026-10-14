@@ -22,18 +22,50 @@ holdout isolation or guided replay; those capabilities remain planned.
 
 ## Run lifecycle
 
-`prepare` requires a new run directory outside the baseline. It records
-`PREPARING`, enumerates regular baseline files and copies them into `workspace/`,
-then records `PREPARED`. Preparation does not hash baseline files, generate a
+`prepare` (also named `resolve-baseline`) requires a new run directory. With
+`--baseline`, that directory must be outside the baseline. It records
+`PREPARING`, prepares `workspace/`, then records `PREPARED`.
+
+With `--repo` and `--document` (or `--case`), the configured agent searches a
+temporary local clone and selects the version before the documented change.
+This requires `--trusted-local` and `--agent-config`. The source repository is
+not checked out or reset. Selection uses the clone's initial HEAD as recorded
+context, while the agent can explore other available history. The chosen
+revision is resolved to a full commit ID, and tracked blobs are streamed into
+the workspace, preserving bytes and executable modes without checkout filters
+or Git archive substitutions. Git LFS pointers remain pointers; the exporter
+does not fetch external LFS objects. Source working-tree edits and analysis scratch files
+are not included. The temporary clone is removed on success or failure.
+
+With `--baseline`, regular files are copied from the supplied directory.
+Preparation does not hash baseline files, generate a
 baseline manifest, or compare baseline and workspace digests. Git metadata named
-`.git` is excluded; symlinks and special files in the copied inputs are rejected.
+`.git` is excluded. Git exports materialize internal symlinks as ordinary
+target copies and record the mapping in `materialized_symlinks`; this supports
+instruction aliases such as `CLAUDE.md -> AGENTS.md`. Directory aliases are
+copied too. Symlink identity is not preserved, so tests of symlink semantics
+need a different workspace backend. External, dangling, cyclic links and
+submodules are unsupported. Directory-based preparation continues to reject
+symlinks and special files.
 Empty directories are not
 tracked. Failed preparation retains an `ERROR` record and requires a new run.
 
-`inputs/case.json` contains the public case. The baseline is the initial workspace
-copy, with file metadata preserved by the copy operation. Frozen case, check,
+`inputs/case.json` contains the supplied public case, or a task built from the
+documents when no case is supplied. Frozen case, check,
 and agent files have their digests retained in `state.json` and checked again at
 sealing time.
+
+`resolution/result.json` retains the agent's decision and explanation, optional
+evidence, the source HEAD, selected baseline commit ID, and execution metadata.
+Document copies and agent logs live alongside it. These records are not hashed,
+sealed, or included in the generation prompt. `state.json` points to the record
+and stores the selected full commit ID. Extra decision fields are preserved;
+there is no confidence gate or required analysis sequence. The only selection
+fields consumed are `baseline_commit`, or `change_commit` whose first parent
+is used. Git must be able to resolve and export the chosen version. An unresolved
+match, invalid revision or failed invocation retains evidence and marks the run
+`ERROR`, requiring a new run. Selection relevance is the agent's judgment, not
+an independently verified evaluation result.
 
 An operator can modify the workspace using their preferred development tools,
 or invoke a frozen command configuration with `generate`.
@@ -57,7 +89,7 @@ network restriction, cryptographic signature, immutable storage, or protection
 against a malicious process replacing both artifacts and their seal. Snapshot
 checks detect many accidental changes but are not an atomic filesystem snapshot.
 
-Use only a curated public baseline for this foundation workflow. Excluding Git
+Review an automatically selected baseline before relying on an evaluation. Excluding Git
 metadata does not remove secrets, reference implementations, or target-derived
 knowledge from source files. Future execution adapters must place untrusted
 agents behind a real isolation boundary and protect evaluator-owned records.
@@ -69,6 +101,10 @@ run/
   state.json
   inputs/
     case.json
+  resolution/              # When preparing from a repository
+    result.json
+    documents/
+    agent/
   workspace/
   artifacts/candidate/
   seal.json
@@ -83,7 +119,7 @@ are not part of this experimental workflow.
 
 Run status transitions and file digest comparisons remain operational checks.
 Persistent state is currently file-based; SQLite indexing, worker recovery,
-evaluation data models, and agent adapters are future work.
+and richer evaluation data models are future work.
 
 Generation and evaluation records extend this layout; they do not overwrite the
 seal. `generate`, `seal`, and `evaluate` acquire an exclusive local controller

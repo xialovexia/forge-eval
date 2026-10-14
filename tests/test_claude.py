@@ -3,7 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from forge_eval.claude import build_prompt, summarize_events
+from forge_eval.agent_common import build_prompt
+from forge_eval.claude import summarize_events
 from forge_eval.core import prepare, read_json, seal, write_json
 from forge_eval.evaluation import evaluate
 from forge_eval.generation import generate

@@ -11,9 +11,40 @@ and credentials are inherited; these adapters do not provide isolation.
 | `deepseek-harness` | `dsh --profile headless TASK` | Official headless profile exit 0 | Unknown |
 | Generic command | Supplied command | Exit 0 | Unknown |
 
-All also require no timeout, no launch error, and unchanged frozen inputs.
+All also require no timeout or launch error. Generation additionally checks
+that frozen inputs are unchanged.
 Generation completion is not functional correctness: seal and independently
 evaluate the candidate afterward.
+
+## Baseline selection during preparation
+
+`resolve-baseline --repo REPOSITORY --document CHANGE.md --agent-config FILE
+--run RUN --trusted-local` uses the same preparation implementation as `prepare`.
+It invokes the configured backend in a disposable local clone with a history
+analysis prompt, then exports the selected version into the run's workspace.
+The same configuration is saved for a separate implementation invocation by
+`generate`. Budget and timeout settings apply separately to each invocation.
+
+The analysis prompt leaves search, grouping related commits, and evidence
+selection to the agent. Its final message should include a JSON object with
+`baseline_commit` (Git revision), or `change_commit` to use its first parent.
+Fenced JSON and surrounding explanation are accepted. `reason`, related commits,
+and arbitrary extra fields are retained without schema checks. Return
+`baseline_commit: null` and a reason when no reliable match exists.
+
+Claude's default analysis tools are `Read`, `Glob`, `Grep`, and `Bash` so it can
+inspect Git history. An explicit `allowed_tools` configuration takes precedence;
+it must allow the history access the agent needs. Generation keeps its existing
+editing-tool defaults. OpenCode and DeepSeek inherit their configured tool
+permissions as before. None of these invocations creates an isolation boundary.
+
+For generic commands, the prompt is sent on stdin and the selection is read
+from stdout. `{workspace}` and `{repository}` refer to the temporary clone;
+`{case}` is the prepared case JSON. Analysis logs and the prompt are retained
+under `resolution/agent/`, and the decision is in `resolution/result.json`.
+The offline hello fixture only writes an implementation; it cannot resolve a
+historical baseline. Baseline selection has offline protocol coverage for all
+three native adapters; its live model selection quality has not been verified.
 
 ## OpenCode
 

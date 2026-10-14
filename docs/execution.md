@@ -8,6 +8,13 @@ cleanup, but are not containment: a process can deliberately escape its group.
 
 ## Frozen inputs
 
+`resolve-baseline` is an alias of `prepare`: repository/document inputs invoke
+history analysis and directly prepare the same run used by generation and
+evaluation. This form requires `--trusted-local` before any agent invocation.
+Analysis logs and document copies stay under `resolution/`, outside the existing
+frozen input inventory; there are no added baseline hashes or intermediate
+schema checks. See [baseline selection](agent-backends.md#baseline-selection-during-preparation).
+
 `prepare --checks DIRECTORY --agent-config FILE` snapshots the optional public
 check bundle and command configuration under `inputs/` without validating their
 JSON structure or cross-references. Their file digests are
@@ -50,8 +57,9 @@ shell, allowing normal shell expressions and pipelines.
 `{python}`, `{workspace}`, and `{case}` are substituted wherever they occur in
 command arguments or strings, including options such as `--case={case}`. `{case}`
 is the frozen case JSON path. When using shell strings, quote paths according to
-the command's needs. The working directory is the prepared workspace. Model and
-tool choices remain the command author's responsibility; usage estimates are
+the command's needs. The working directory is the prepared workspace.
+The task prompt is also supplied on stdin and retained in `generation/prompt.txt`.
+Model and tool choices remain the command author's responsibility; usage estimates are
 not invented.
 
 `timeout_seconds` is optional. Omitting it or setting it to null supplies no
