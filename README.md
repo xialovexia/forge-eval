@@ -4,7 +4,7 @@
 
 ForgeEval is a project-level evaluation harness designed for isolated runs, evidence-backed verification, and reproducible comparisons.
 
-> **Status: trusted-local prototype.** The CLI freezes public contract checks and command-agent configuration, runs trusted commands, seals candidates, and produces feature-level JSON and Markdown evaluations. It has no security sandbox, hidden-test protection, real-agent-specific integration, or statistical comparison engine.
+> **Status: trusted-local prototype.** The CLI freezes public contract checks and agent configuration, runs generic commands, Claude Code, OpenCode, or DeepSeek Harness, seals candidates, and produces feature-level JSON and Markdown evaluations. It has no security sandbox, hidden-test protection, or statistical comparison engine.
 
 This iteration prioritizes testing ideas and model-directed tool use. Case,
 agent, and check inputs have no enforced schemas, field whitelists, identifier
@@ -54,6 +54,12 @@ the equivalent command is then `forge-eval`. See the
 [execution contract](docs/execution.md) and [foundation contract](docs/foundation.md).
 
 ## Purpose
+
+For a real-agent run, see [the backend guide](docs/agent-backends.md) or
+[the Claude Code adapter](docs/claude-code.md). The Claude adapter uses
+the installed Claude CLI and retains event logs, observed model, token usage,
+and client-estimated cost. The default quick start above remains an offline
+fixture and does not call a model.
 
 ForgeEval evaluates whether an agent or skill can turn requirements into working project code. It focuses on functional correctness, verification coverage, reliability, and cost.
 
@@ -110,7 +116,9 @@ In strict holdout mode, hidden reference information is used for scoring only af
 - [ ] Implement isolated workspaces, evidence capture, and artifact sealing.
 - [x] Add a generic trusted-local command adapter and a Python contract example.
 - [x] Produce feature-level reports with evidence and verification coverage.
-- [ ] Integrate a real agent backend and an isolated project execution environment.
+- [x] Integrate a Claude Code CLI backend with execution and usage evidence.
+- [x] Add OpenCode JSON events and DeepSeek Harness headless adapters.
+- [ ] Implement an isolated project execution environment.
 - [ ] Run a historical change case and a contract case without a Goldline.
 - [ ] Add a second project technology stack without modifying the core engine.
 - [ ] Produce version comparison reports.

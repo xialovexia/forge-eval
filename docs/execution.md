@@ -68,8 +68,13 @@ a new run. Manual code editing can still proceed directly from `PREPARED` to
 sealing, without a configured agent.
 
 The hello fixture writes a predetermined implementation. It tests plumbing,
-not an agent's ability to solve a task. Real-agent integration, model identity,
-skill snapshots, and provider-reported usage remain future work.
+not an agent's ability to solve a task. A configuration with
+`backend: "claude-code"` selects the [Claude Code adapter](claude-code.md),
+which captures model and usage evidence from the CLI. Skill snapshots and
+controlled host context remain future work. `backend: "opencode"` and
+`backend: "deepseek-harness"` select the additional [CLI adapters](agent-backends.md).
+All other configurations retain
+the generic command behavior described above.
 
 ## Independent evaluation attempts
 

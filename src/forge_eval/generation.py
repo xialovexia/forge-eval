@@ -1,9 +1,15 @@
-"""Generic command-agent adapter; usage remains unknown unless measured."""
+"""Dispatch generation to local agent adapters and retain execution evidence."""
 
 from pathlib import Path
 
 from .core import HarnessError, inventory, now, read_json, run_lock, write_json
 from .execution import execute
+from .claude import run_claude
+from .opencode import run_opencode
+from .deepseek import run_deepseek
+
+
+BACKENDS = {"claude-code": run_claude, "opencode": run_opencode, "deepseek-harness": run_deepseek}
 
 
 def generate(run_path, trusted_local=False):
@@ -26,18 +32,27 @@ def _generate(run_path):
     state["status"] = "RUNNING"
     write_json(run / "state.json", state)
     try:
-        outcome = execute(config, run / "workspace", run / "generation", {
-            "{workspace}": str(run / "workspace"),
-            "{case}": str(run / "inputs/case.json"),
-        })
+        agent = None
+        adapter = BACKENDS.get(config.get("backend")) if isinstance(config, dict) else None
+        if adapter is not None:
+            outcome, agent = adapter(config, run)
+        else:
+            outcome = execute(config, run / "workspace", run / "generation", {
+                "{workspace}": str(run / "workspace"),
+                "{case}": str(run / "inputs/case.json"),
+            })
         inputs_valid = inventory(run / "inputs") == state["inputs"]
         succeeded = inputs_valid and outcome["exit_code"] == 0 and not outcome["timed_out"] and outcome["error"] is None
+        if agent is not None:
+            succeeded = succeeded and agent["completed"]
         state["status"] = "GENERATED" if succeeded else "GENERATION_FAILED"
         result = {
             "schema_version": "1.0", "status": state["status"], "finished_at": now(),
-            "backend": "trusted-local-command", "inputs_verified": inputs_valid,
-            "usage": {"tokens": None, "cost": None}, "execution": outcome,
+            "backend": agent["backend"] if agent else "trusted-local-command", "inputs_verified": inputs_valid,
+            "usage": agent["usage"] if agent else {"tokens": None, "cost": None}, "execution": outcome,
         }
+        if agent is not None:
+            result["agent"] = agent
         write_json(run / "generation/result.json", result)
         write_json(run / "state.json", state)
         return result
