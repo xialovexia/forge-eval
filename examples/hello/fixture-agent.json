@@ -1,0 +1,8 @@
+{
+  "argv": [
+    "{python}",
+    "-c",
+    "from pathlib import Path; Path('greeting.py').write_text(\"def greet(name):\\n    if not name.strip():\\n        raise ValueError('blank name')\\n    return 'Hello, ' + name + '!'\\n\")"
+  ],
+  "timeout_seconds": 10
+}

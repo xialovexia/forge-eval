@@ -1,0 +1,4 @@
+{
+  "backend": "deepseek-harness",
+  "timeout_seconds": 300
+}
