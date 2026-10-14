@@ -1,6 +1,7 @@
 """Local, operator-controlled workspace preparation and artifact sealing.
 
-These helpers are not a security sandbox. They never execute candidate code.
+These helpers are not a security sandbox. Repository preparation can invoke an
+agent with explicit trusted-local opt-in.
 Digests establish consistency with a trusted seal, not authenticity of the seal.
 """
 
@@ -103,21 +104,42 @@ def copy_files(source, destination, files):
         shutil.copy2(source / relative, output)
 
 
-def prepare(case_path, baseline, run_path, checks_path=None, agent_path=None):
-    case = read_json(case_path)
-    case_id = case.get("case_id", Path(case_path).stem) if isinstance(case, dict) else Path(case_path).stem
+def prepare(case_path=None, baseline=None, run_path=None, checks_path=None, agent_path=None,
+            *, repo=None, documents=None, trusted_local=False):
+    if (baseline is None) == (repo is None):
+        raise HarnessError("Provide a repository to resolve or a prepared baseline directory")
+    if repo is not None:
+        if not trusted_local:
+            raise HarnessError("Baseline analysis requires --trusted-local; agents inherit host access")
+        if agent_path is None:
+            raise HarnessError("Baseline analysis requires an agent configuration")
+        repo = Path(repo).resolve()
+    if isinstance(documents, (str, Path)):
+        documents = [documents]
+    documents = [{"name": Path(path).name, "text": Path(path).read_text(encoding="utf-8")}
+                 for path in (documents or [])]
+    if case_path is not None:
+        case = read_json(case_path)
+        default_id = Path(case_path).stem
+    elif documents:
+        default_id = Path(documents[0]["name"]).stem
+        case = {"case_id": default_id, "requirement": "\n\n".join(doc["text"] for doc in documents)}
+    else:
+        raise HarnessError("Provide a change document or case JSON")
+    case_id = case.get("case_id", default_id) if isinstance(case, dict) else default_id
     if checks_path is not None:
         checks_path = Path(checks_path).absolute()
         check_files = inventory(checks_path)
-    baseline = Path(baseline).absolute()
+    baseline = Path(baseline).absolute() if baseline is not None else None
     run = Path(run_path).absolute()
     if run.exists() or run.is_symlink():
         raise HarnessError("Run directory already exists; use a new run path")
-    if baseline.resolve() in (run.resolve(), *run.resolve().parents):
+    if baseline is not None and baseline.resolve() in (run.resolve(), *run.resolve().parents):
         raise HarnessError("Run directory must be outside the baseline")
     if checks_path is not None and checks_path.resolve() in (run.resolve(), *run.resolve().parents):
         raise HarnessError("Run directory must be outside the check bundle")
-    source_files = sorted(path.relative_to(baseline).as_posix() for path, _ in _walk_files(baseline, exclude_git=True))
+    if baseline is not None:
+        source_files = sorted(path.relative_to(baseline).as_posix() for path, _ in _walk_files(baseline, exclude_git=True))
     run.mkdir(parents=True)
     write_json(run / "state.json", {"schema_version": "1.0", "status": "PREPARING"})
     try:
@@ -130,12 +152,19 @@ def prepare(case_path, baseline, run_path, checks_path=None, agent_path=None):
                 raise HarnessError("Check bundle changed during preparation")
         if agent_path is not None:
             shutil.copy2(agent_path, inputs / "agent.json")
-        copy_files(baseline, run / "workspace", source_files)
+        baseline_record = None
+        if repo is not None:
+            from .baseline import resolve_baseline
+            baseline_record = resolve_baseline(repo, run, case, documents)
+        else:
+            copy_files(baseline, run / "workspace", source_files)
         state = {
             "schema_version": "1.0", "status": "PREPARED", "case_id": case_id,
             "created_at": now(), "isolation": "local-copy-not-sandboxed",
             "inputs": inventory(inputs),
         }
+        if baseline_record is not None:
+            state["baseline"] = baseline_record
         write_json(run / "state.json", state)
         return state
     except Exception as exc:

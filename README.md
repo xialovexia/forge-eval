@@ -2,8 +2,9 @@
 
 **Run coding agents on project tasks and evaluate the code they produce.**
 
-ForgeEval is a Python CLI that prepares a project workspace, runs an agent,
-seals its output, and checks that output against your acceptance tests. Each
+ForgeEval is a Python CLI that uses change documents and a project's Git history
+to select a baseline, prepares a workspace, runs an agent, seals its output,
+and checks that output against your acceptance tests. Each
 run keeps its inputs, execution logs, and feature-level results so you can
 inspect what happened rather than rely on the agent's final message.
 
@@ -14,6 +15,8 @@ inspect what happened rather than rely on the agent's final message.
 ## What works today
 
 - Run Claude Code, OpenCode, DeepSeek Harness, or a custom command.
+- Let the configured agent locate a documented historical change and select the
+  project version before it, directly within run preparation.
 - Copy a baseline into a new workspace and freeze public task/check inputs.
 - Capture generation logs, timeouts, exit status, and available usage data.
 - Seal candidate files and detect subsequent changes relative to the seal.
@@ -29,6 +32,7 @@ that behavior. You supply the criteria; ForgeEval runs and records them.
 - Python 3.9 or later.
 - macOS or Linux for command execution.
 - An installed, authenticated agent CLI for real-agent runs.
+- Git for document-driven baseline selection from a local repository.
 
 The Python core has no runtime package dependencies. Install from this repository:
 
@@ -107,11 +111,64 @@ See [all backend options](docs/agent-backends.md) and
 
 ## Evaluate your own project
 
-Create three inputs before starting a run:
+Start with a local Git repository and a change document in UTF-8 text or Markdown.
+You do not need to identify the baseline commit yourself:
 
-1. **Baseline directory:** the project files the agent should begin with.
-2. **Case JSON:** a task description and the behavior you want verified.
-3. **Check directory:** a `plan.json` file and any helper scripts it invokes.
+```sh
+forge-eval resolve-baseline \
+  --repo /path/to/project \
+  --document /path/to/change.md \
+  --agent-config examples/hello/claude-agent.json \
+  --run .forge-eval/runs/project-001 \
+  --trusted-local
+
+forge-eval generate --run .forge-eval/runs/project-001 --trusted-local
+```
+
+`resolve-baseline` is an alias of `prepare`, using the same run lifecycle. It
+analyzes history, selects the baseline, and creates `workspace/` in one call.
+There is no separate result to manually pass between commands. The existing
+`prepare --baseline DIRECTORY --case FILE` workflow also remains available.
+
+The agent searches a disposable local clone, examines diffs, and chooses the
+state before the complete documented change. It can consider multiple commits
+or a merge and explain uncertainty. ForgeEval resolves its chosen Git revision
+to a full commit ID and exports the tracked files directly; it does not switch
+your source checkout or include its uncommitted files. The analysis clone is
+removed after preparation. In-tree Git symlinks are materialized as ordinary
+copies of their targets, including directory aliases, and listed in the
+resolution record. External, dangling, cyclic links and submodules are
+unsupported; symlink identity is not preserved in the evaluation workspace.
+
+Repeat `--document` for multiple documents. Without `--case`, their combined text
+becomes the public task in `inputs/case.json`. With `--case`, that JSON remains
+the public task and the documents provide additional context for baseline
+selection. A case alone can also describe the change when using `--repo`.
+PDF/Word parsing and remote repository cloning are not included.
+
+Selection reasons, optional related commits, raw agent logs and document copies
+are saved in `resolution/`. The selected full commit ID is also recorded in
+`state.json`. The agent controls its search strategy and can return additional
+fields; no confidence threshold or intermediate schema validation is imposed.
+An unresolved match or failed agent call leaves an `ERROR` run with evidence,
+without silently falling back to the latest version. The system does not
+independently prove that the selected change matches the document.
+
+Baseline resolution adds no SHA-256 checks or baseline manifests. Export reads
+tracked blobs once, retaining their bytes and executable modes. Existing public
+input and candidate-sealing integrity checks are unchanged. Resolution evidence
+is outside that integrity inventory and is not added to the implementation
+prompt. Analysis and implementation use separate invocations of the same agent
+configuration; this is not filesystem isolation.
+
+For acceptance evaluation, also supply these optional inputs during preparation:
+
+1. **`--case FILE`:** task JSON with the behavior you want verified.
+2. **`--checks DIRECTORY`:** a `plan.json` file and any helper scripts it invokes.
+
+Documents alone do not generate acceptance checks or feature declarations.
+Supply these to obtain feature-level PASS/FAIL results, then use `seal` and
+`evaluate` as in the offline example.
 
 For example, a case might contain:
 
@@ -185,6 +242,7 @@ evaluation. Read the JSON status to distinguish failure from missing evidence.
 ```text
 .forge-eval/runs/hello-001/
   inputs/                 # Frozen task, optional check bundle and agent config
+  resolution/             # Optional history analysis, documents, selected commit
   workspace/              # Agent's editable project copy
   generation/             # Logs, execution result, adapter prompt when available
   artifacts/candidate/    # Sealed candidate copy
@@ -209,7 +267,8 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 
 Automated tests run offline and use fake agent executables. They cover the run
 lifecycle, input/candidate changes, feature aggregation, process errors,
-timeouts, and backend event parsing. CI runs the suite on Python 3.9 and 3.12;
+timeouts, backend event parsing, and document-driven preparation against temporary
+Git histories (including multi-commit and merge changes). CI runs the suite on Python 3.9 and 3.12;
 real provider calls are not part of CI.
 
 ## Scope and next steps

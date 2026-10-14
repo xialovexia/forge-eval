@@ -3,8 +3,7 @@
 import json
 import math
 
-from .agent_common import build_prompt, probe_version
-from .core import read_json
+from .agent_common import probe_version
 from .execution import execute
 
 
@@ -66,21 +65,20 @@ def summarize_events(path):
     }
 
 
-def run_opencode(config, run):
+def run_opencode(config, workspace, evidence, prompt):
     executable = config.get("executable", "opencode")
     version = probe_version([executable])
-    argv = [executable, "run", "--format", "json", "--dir", str(run / "workspace")]
+    argv = [executable, "run", "--format", "json", "--dir", str(workspace)]
     for key in ("model", "agent", "variant"):
         if config.get(key):
             argv.extend(["--" + key, str(config[key])])
     outcome = execute(
         {"argv": argv, "timeout_seconds": config.get("timeout_seconds", 600)},
-        run / "workspace", run / "generation",
-        stdin_text=build_prompt(read_json(run / "inputs/case.json")),
+        workspace, evidence, stdin_text=prompt,
     )
     return outcome, {
         "backend": "opencode", "cli_version": version, "requested_model": config.get("model"),
         "requested_agent": config.get("agent"), "requested_variant": config.get("variant"),
         "permissions": "inherited; no auto-approval override",
-        **summarize_events(run / "generation/stdout.log"),
+        **summarize_events(evidence / "stdout.log"),
     }

@@ -2,14 +2,9 @@
 
 from pathlib import Path
 
+from .agent_common import build_prompt
+from .agents import completed, run_agent
 from .core import HarnessError, inventory, now, read_json, run_lock, write_json
-from .execution import execute
-from .claude import run_claude
-from .opencode import run_opencode
-from .deepseek import run_deepseek
-
-
-BACKENDS = {"claude-code": run_claude, "opencode": run_opencode, "deepseek-harness": run_deepseek}
 
 
 def generate(run_path, trusted_local=False):
@@ -32,19 +27,15 @@ def _generate(run_path):
     state["status"] = "RUNNING"
     write_json(run / "state.json", state)
     try:
-        agent = None
-        adapter = BACKENDS.get(config.get("backend")) if isinstance(config, dict) else None
-        if adapter is not None:
-            outcome, agent = adapter(config, run)
-        else:
-            outcome = execute(config, run / "workspace", run / "generation", {
+        outcome, agent = run_agent(
+            config, run / "workspace", run / "generation",
+            build_prompt(read_json(run / "inputs/case.json")), {
                 "{workspace}": str(run / "workspace"),
                 "{case}": str(run / "inputs/case.json"),
-            })
+            },
+        )
         inputs_valid = inventory(run / "inputs") == state["inputs"]
-        succeeded = inputs_valid and outcome["exit_code"] == 0 and not outcome["timed_out"] and outcome["error"] is None
-        if agent is not None:
-            succeeded = succeeded and agent["completed"]
+        succeeded = inputs_valid and completed(outcome, agent)
         state["status"] = "GENERATED" if succeeded else "GENERATION_FAILED"
         result = {
             "schema_version": "1.0", "status": state["status"], "finished_at": now(),

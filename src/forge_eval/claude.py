@@ -3,8 +3,7 @@
 import json
 import math
 
-from .agent_common import build_prompt, probe_version
-from .core import read_json
+from .agent_common import probe_version
 from .execution import execute
 
 
@@ -60,7 +59,7 @@ def summarize_events(path):
     }
 
 
-def run_claude(config, run):
+def run_claude(config, workspace, evidence, prompt):
     executable = config.get("executable", "claude")
     version = probe_version([executable])
     tools = config.get("allowed_tools", ["Read", "Edit", "Write", "Glob", "Grep"])
@@ -74,10 +73,9 @@ def run_claude(config, run):
         argv.extend(["--max-budget-usd", str(config["max_budget_usd"])])
     outcome = execute(
         {"argv": argv, "timeout_seconds": config.get("timeout_seconds", 600)},
-        run / "workspace", run / "generation",
-        stdin_text=build_prompt(read_json(run / "inputs/case.json")),
+        workspace, evidence, stdin_text=prompt,
     )
-    summary = summarize_events(run / "generation/stdout.log")
+    summary = summarize_events(evidence / "stdout.log")
     return outcome, {
         "backend": "claude-code", "cli_version": version, "requested_model": config.get("model"),
         "permission_mode": "dontAsk", "allowed_tools": tools,

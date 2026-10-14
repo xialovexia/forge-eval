@@ -52,7 +52,10 @@ restricts built-in tools to `allowed_tools`, pre-approves those tools, and uses
 `--strict-mcp-config` without additional servers. Default tools allow file
 inspection and editing, not shell execution or delegation. Projects needing
 agent-side builds can explicitly add appropriate tools before preparation;
-independent ForgeEval checks already run after sealing.
+independent ForgeEval checks already run after sealing. During document-driven
+baseline selection, defaults instead include `Read`, `Glob`, `Grep`, and `Bash`
+for Git inspection in a temporary clone. Explicit `allowed_tools` still wins.
+See [baseline selection](agent-backends.md#baseline-selection-during-preparation).
 
 These permission settings are not filesystem containment. Host hooks, skills,
 instructions, and settings can still influence a run. The adapter does not use
@@ -99,7 +102,8 @@ USD 0.041857. This is one small integration test, not a benchmark result. An
 earlier attempt failed with a network EPERM error and was preserved as a failed
 generation; the retry used a new run directory.
 
-The automated suite includes 50 tests, with offline Claude protocol fixtures.
+The automated suite includes offline Claude protocol fixtures for generation
+and baseline selection.
 Network authentication and account availability are only exercised by a manual
 live run, never by CI.
 
