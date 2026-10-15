@@ -1,5 +1,9 @@
 # Claude Code adapter
 
+To use ForgeEval **inside** Claude Code as a plugin, see the
+[plugin guide](plugins.md). This page describes Claude Code as the separately
+invoked agent being evaluated. The plugin also supports Codex as its host.
+
 ForgeEval can invoke an installed, authenticated Claude Code CLI. This is a
 trusted-local backend: it inherits the host environment and Claude configuration.
 It is not a sandbox, a hidden-test boundary, or a reproducible snapshot of the

@@ -138,3 +138,9 @@ local files, not signed or tamper-proof attestations.
 Treat the JSON status as authoritative for distinguishing FAIL, ERROR, and
 UNVERIFIED. These result statuses are separate from CLI exit codes and check
 process exit codes.
+
+`doctor` and `inspect --run` are read-only discovery commands for terminal users
+and plugin hosts. Inspection reports current integrity errors in JSON while
+returning 0 when the evidence was successfully read; use `verify` when integrity
+failure should cause a nonzero exit code. Inspection can report incomplete
+evaluation attempts and does not execute checks or remove controller locks.

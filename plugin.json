@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "forge-eval",
+  "version": "0.1.0-alpha.1",
+  "description": "Evaluate the code-generation capabilities of coding agents on existing codebases.",
+  "author": {"name": "ForgeEval contributors"},
+  "repository": "https://github.com/xialovexia/forge-eval",
+  "keywords": ["evaluation", "coding-agents", "acceptance-tests"]
+}

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "forge-eval"
 version = "0.1.0a1"
-description = "Project-level evaluation foundations for coding agents and skills"
+description = "Evaluate the code-generation capabilities of coding agents on existing codebases."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = []

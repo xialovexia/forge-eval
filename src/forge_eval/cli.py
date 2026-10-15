@@ -8,12 +8,16 @@ from . import __version__
 from .core import prepare, seal, verify
 from .evaluation import evaluate
 from .generation import generate
+from .inspection import doctor, inspect_run
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="forge-eval")
     parser.add_argument("--version", action="version", version=__version__)
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("doctor", help="Inspect local prerequisites without invoking agents")
+    inspection = commands.add_parser("inspect", help="Read run evidence and verify integrity without executing checks")
+    inspection.add_argument("--run", required=True)
     preparation = commands.add_parser(
         "prepare", aliases=["resolve-baseline"],
         help="Resolve a baseline from change documents or copy a baseline into a new run",
@@ -46,8 +50,12 @@ def main(argv=None):
             result = generate(args.run, args.trusted_local)
         elif args.command == "evaluate":
             result = evaluate(args.run, args.trusted_local)
-        else:
+        elif args.command == "verify":
             result = verify(args.run)
+        elif args.command == "inspect":
+            result = inspect_run(args.run)
+        else:
+            result = doctor()
     except (ValueError, OSError) as exc:
         print(json.dumps({"error": str(exc)}), file=sys.stderr)
         return 1

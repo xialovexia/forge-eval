@@ -1,0 +1,12 @@
+{
+  "name": "forge-eval-local",
+  "description": "Evaluate the code-generation capabilities of coding agents on existing codebases.",
+  "owner": {"name": "ForgeEval contributors"},
+  "plugins": [
+    {
+      "name": "forge-eval",
+      "source": "./",
+      "description": "Evaluate the code-generation capabilities of coding agents on existing codebases."
+    }
+  ]
+}

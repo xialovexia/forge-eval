@@ -1,34 +1,62 @@
 # ForgeEval
 
-Use change documents to locate a baseline in a real project's history, ask a coding agent to implement the requirements, and evaluate its output with independent acceptance checks.
+ForgeEval evaluates the code-generation capabilities of coding agents on existing codebases. It provides a defined project baseline and change requirements, then assesses the generated code through independent acceptance checks. Each run preserves the inputs, generated code, logs, and results for inspection.
+
+ForgeEval works as a standalone Python CLI and as a shared plugin for Claude Code and Codex.
 
 ## Project Purpose
 
-Evaluating a coding agent requires answering three questions: what state did it start from, what change was it asked to make, and does the resulting code meet the requirements? The agent's completion message alone cannot answer them.
+Working on an existing codebase requires an agent to understand the surrounding code, implement the requested change, and preserve behavior that should remain unchanged. ForgeEval supports evaluating these capabilities through project tasks such as adding features, fixing bugs, and modifying existing functionality.
 
-ForgeEval organizes these questions into an inspectable workflow:
+An evaluation connects three things: the project's starting state, the requested change, and executable checks of the resulting behavior.
 
 ```text
-Change documents + project Git history
+Existing codebase + change requirements
                   ↓
-Agent locates the most relevant historical change
-and selects the baseline before that change
+Prepare a baseline workspace
+(supplied directly or resolved from Git history)
                   ↓
-Create a workspace from the pinned baseline
-and let the agent implement the requirements
+Let the coding agent implement the change
                   ↓
-Seal the candidate, run independent checks, and report results
+Seal the generated code and run independent acceptance checks
+                  ↓
+Report feature-level results with execution evidence
 ```
 
-**The primary input is a document describing the change. You do not need to supply a baseline commit in advance.** The configured agent searches code, commit history, and diffs to identify a change spanning one commit, several related commits, or a merge. It then selects the version before the complete change. ForgeEval pins that choice to a full Git commit ID and retains the reasoning and execution records.
+You can supply a prepared baseline or use change documents to construct a task from project history. For historical tasks, the configured agent searches the repository's code, commits, and diffs to identify the relevant change and select the version before it. ForgeEval pins that baseline to a full Git commit ID and retains the selection evidence.
 
-This turns historical project changes into coding tasks and provides evidence for investigating baseline selection errors, generation failures, and unmet requirements separately. Inputs, logs, candidate code, and results for each declared feature remain available for review and later comparison.
+Acceptance checks determine whether the generated code satisfies the declared requirements. They can cover both the requested functionality and existing behavior that must be preserved. Generation failures, baseline-selection errors, and unmet requirements remain distinguishable in the run records; an agent's completion message alone does not establish success.
 
-The current version is **0.1.0a1, an early prototype for trusted local use**. Agents and check commands use host permissions and existing configuration. There is no security sandbox, hidden-test isolation, or controlled Skill snapshot. Baseline selection still depends on the agent's judgment; pinning a commit does not prove that the selection is correct.
+ForgeEval runs in a trusted local environment. Agents and check commands use host permissions and existing configuration. There is no security sandbox, hidden-test isolation, or controlled Skill snapshot. Baseline selection still depends on the agent's judgment; pinning a commit does not prove that the selection is correct.
 
 ## Usage
 
-### Installation and Requirements
+### Use as a Claude Code or Codex Plugin
+
+Both hosts can load the same ForgeEval skill and bundled Python core. Build a
+clean plugin directory from this checkout:
+
+```sh
+python3 scripts/build_plugin.py --output dist/forge-eval
+```
+
+For a Claude Code session, run
+`claude --plugin-dir /absolute/path/to/dist/forge-eval`, then invoke
+`/forge-eval:forge-eval`. For Codex, register and install the same package:
+
+```sh
+codex plugin marketplace add /absolute/path/to/dist/forge-eval
+codex plugin add forge-eval@forge-eval-local
+```
+
+The plugin needs Python 3.9+ and local shell access, but no pip installation.
+It preserves the standalone CLI and existing backend selection. See the
+[plugin guide](docs/plugins.md) for persistent Claude installation, Codex desktop
+setup, the offline smoke test, and the distinction between the plugin host and
+the evaluated agent. Both hosts reuse the same skill and runtime; the evaluated
+agent is selected independently through its configuration.
+
+### Standalone CLI Installation
 
 Use Python 3.9+ on macOS or Linux. History analysis requires Git, and live model calls require a separately installed and authenticated agent CLI. The Python core has no third-party runtime dependencies.
 
@@ -149,6 +177,15 @@ Expected results are `GENERATED` for generation, `VERIFIED` for file verificatio
 
 ### Inspect Run Records
 
+```sh
+forge-eval doctor
+forge-eval inspect --run .forge-eval/runs/project-002
+```
+
+`doctor` reports local prerequisites without calling models. `inspect` reads run
+state, generation/evaluation evidence, and current integrity without executing
+checks. Historical evaluation results and current integrity are shown separately.
+
 ```text
 .forge-eval/runs/<run>/
   inputs/                 # Frozen task, checks, and agent configuration
@@ -165,54 +202,10 @@ Every evaluation receives a new ID. The command's `report_path` points to its re
 
 See [execution conventions](docs/execution.md) for commands, placeholders, and result aggregation, and [foundation and trust boundaries](docs/foundation.md) for evaluation scope.
 
-## Current Test Status
-
-The following local validation results are current as of **2026-10-14**, distinguishing offline tests, live agent calls, and project experiments.
-
-| Test Scope | Current Result |
-| --- | --- |
-| ForgeEval automated tests | 77 offline tests passed, covering the run lifecycle, historical baseline selection, file integrity, feature aggregation, timeouts, and backend protocols |
-| Claude Code hello example | Live generation completed and independent acceptance checks passed |
-| OpenCode hello example | Live generation completed, both required features passed independent checks, and seal verification passed |
-| DeepSeek Harness backend | Offline adapter tests passed; live `dsh` invocation has not yet been validated |
-
-Run the automated tests locally with:
-
-```sh
-PYTHONPATH=src python3 -m unittest discover -s tests -v
-```
-
-CI is configured for Python 3.9 and 3.12. Offline tests use simulated agents, exclude live provider calls, and do not establish model capability on project tasks.
-
-### DeepSeek Harness Historical Change Experiment
-
-This experiment used **PR #2484, `fix(web): reject unsupported wildcard host`**, from the DeepSeek Harness repository. A requirements file was derived from the historical change, then local Claude Code selected the baseline and attempted a fresh implementation. The requirements input contained neither the PR number nor a commit ID.
-
-The case came from local Git merge records and diffs, which record a merge date of 2026-08-13. The public PR endpoint did not return the PR, so this is a case from locally available history, not a verified latest PR from the public repository.
-
-Baseline resolution correctly selected the version before the complete change was merged:
-
-```text
-5d114c283391a19d541dfb18d5c4c956d73241a6
-```
-
-The same independent acceptance checks were applied to three versions:
-
-| Evaluated Version | Result | Details |
-| --- | --- | --- |
-| Baseline before the change | `FAIL`, 2/4 groups passed | Wildcard host rejection and the help/documentation updates were absent |
-| Historical PR implementation | `PASS`, 4/4 groups passed | Used as a reference to validate the checks |
-| Claude Code candidate | `PASS`, 4/4 groups passed | 47 assertions covering address rejection, compatibility, help/documentation, and trust rules |
-
-**The experiment did not complete the entire workflow successfully.** Claude Code's generation invocation timed out after 600 seconds, and the original run remains `GENERATION_FAILED`. The candidate left at timeout was subsequently sealed and evaluated in a separate run, with no manual source-code repairs. Passing candidate checks and a failed generation lifecycle are separate outcomes.
-
-The checks executed actual TypeScript modules with a simulated service context. They did not validate the fully built CLI, a live web server, or the project's entire CI suite. Generation tokens and cost remain unknown because no final result was received. Using DeepSeek Harness as the target project also does not validate its `dsh` agent backend.
-
-The requirements, checks, summaries, and reports are stored locally under `.forge-eval/experiments/deepseek-pr2484/` and the corresponding run directories. They are not distributed with the repository.
-
 ## Supported Tools
 
-ForgeEval currently provides a Python CLI with these coding-agent backends:
+ForgeEval provides a Python CLI and a shared Claude Code/Codex plugin, with these
+coding-agent backends:
 
 | Tool / Backend | Integration | Model Configuration | Example |
 | --- | --- | --- | --- |
@@ -227,4 +220,12 @@ Claude Code and OpenCode can record backend-reported tokens and estimated costs.
 
 Supported inputs are local Git repositories, UTF-8 text or Markdown documents, and existing baseline directories. Git export can materialize links within the repository as ordinary files or directories, without preserving symlink identity. External, dangling, or cyclic links and submodules are unsupported. Directly supplied baseline directories also do not support symlinks.
 
-Remote repository cloning, PDF/Word parsing, automatic acceptance-test generation, hidden-reference evaluation, controlled Skill comparisons, statistical version comparisons, and MCP/plugin packaging are not yet implemented.
+## Development
+
+Run the automated tests from the repository root:
+
+```sh
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
+
+The offline suite covers the evaluation lifecycle, backend protocols, file integrity, and relocated plugin execution without live provider calls. CI runs on Python 3.9 and 3.12.
