@@ -1,0 +1,17 @@
+{
+  "name": "forge-eval",
+  "version": "0.1.0-alpha.1",
+  "description": "Evaluate the code-generation capabilities of coding agents on existing codebases.",
+  "author": {"name": "ForgeEval contributors"},
+  "repository": "https://github.com/xialovexia/forge-eval",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "ForgeEval",
+    "shortDescription": "Evaluate code generation on existing codebases",
+    "longDescription": "ForgeEval evaluates the code-generation capabilities of coding agents on existing codebases. It provides a defined project baseline and change requirements, then assesses the generated code through independent acceptance checks. Each run preserves the inputs, generated code, logs, and results for inspection. ForgeEval works as a standalone Python CLI and as a shared plugin for Claude Code and Codex.",
+    "developerName": "ForgeEval contributors",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": ["Use ForgeEval to evaluate this project change."]
+  }
+}
